@@ -17,6 +17,8 @@ dependencies = [
     "wandb>=0.19.7",
     "pandas>=2",
     "ty>=0.0.1a16",
+    "ipykernel>=7.2.0",
+    "modal>=1.4.1",
 ]
 
 [build-system]
@@ -33,8 +35,6 @@ python-preference = "managed"
 
 [tool.uv.sources]
 cs336-basics = { path = "../assignment1-basics", editable = true }  # Change this path to your assignment1-basics repo you want to use your own implementation!
-
-
 
 [tool.pytest.ini_options]
 log_cli = true
