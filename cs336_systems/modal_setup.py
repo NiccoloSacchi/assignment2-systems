@@ -13,12 +13,13 @@ def app():
       # to install it from PyPI.
       .apt_install("git")
       .run_commands(
-          "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
-          "pip install -e /root/assignment1-basics",
+        "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
+        "pip install -e /root/assignment1-basics",
       )
       # This installs only the dependencies list, ignoring the rest, i.e. it does
       # not know that cs336-basics should be installed from a local path.
       .pip_install_from_pyproject("/Users/niccolosacchi/assignment2-systems/pyproject.toml")
-      .add_local_python_source("benchmark")
+      .add_local_python_source("benchmark", "modal_setup")
+      .add_local_file("cs336_systems/benchmarking_script.py", remote_path="/root/benchmarking_script.py")
   )
   return modal.App("cs336-systems", image=app_image)

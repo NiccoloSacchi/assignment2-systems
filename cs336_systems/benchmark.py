@@ -43,7 +43,7 @@ def instantiate_model(
   )
 
 
-def benchmarking_script(
+def compute_mean_and_std_pass_times(
   model_config: ModelConfig,
   context_length: int,
   measure_also_backward: bool,
@@ -52,6 +52,26 @@ def benchmarking_script(
   measure_steps: int = 10,
   batch_size: int = 4,
 ) -> tuple[int, int]:
+  """Compute the mean and std times for the forward pass.
+  
+  Compute the mean and std times for the forward pass for a model with the given
+  config and context length.
+
+  Args:
+      model_config (ModelConfig): The configuration of the model to benchmark.
+      context_length (int): The length of the context for the model.
+      measure_also_backward (bool): Whether to also measure the backward pass.
+      synchronize (bool, optional): Whether to synchronize CUDA operations.
+        Defaults to True.
+      warmup_steps (int, optional): The number of warmup steps. Defaults to 5.
+      measure_steps (int, optional): The number of measurement steps. Defaults
+        to 10.
+      batch_size (int, optional): The batch size. Defaults to 4.
+
+  Returns:
+      tuple[int, int]: The mean and standard deviation of the forward pass
+        times.
+  """
   assert torch.cuda.is_available(), "CUDA must be available for running this Benchmark"
   device = torch.device("cuda")
   print("Creating dummy data and model...")
