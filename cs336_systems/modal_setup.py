@@ -1,25 +1,30 @@
+from pathlib import Path
+from typing import Optional
+
 import modal
 
-def app():
-  """Returns the Modal app for this assignment.
-  
-  The app image contains libraries that change very rarely (to avoid having to
-  re-build).
-  """
-  # Create an app will all needed packages.
-  app_image = (
-      modal.Image.debian_slim()
-      # Install cs336-basics before pip_install_from_pyproject tries (and fails)
-      # to install it from PyPI.
-      .apt_install("git")
-      .run_commands(
-        "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
-        "pip install -e /root/assignment1-basics",
-      )
-      # This installs only the dependencies list, ignoring the rest, i.e. it does
-      # not know that cs336-basics should be installed from a local path.
-      .pip_install_from_pyproject("/Users/niccolosacchi/assignment2-systems/pyproject.toml")
-      .add_local_python_source("benchmark", "modal_setup")
-      .add_local_file("cs336_systems/benchmarking_script.py", remote_path="/root/benchmarking_script.py")
-  )
-  return modal.App("cs336-systems", image=app_image)
+# Used to persist outputs, e.g. profile traces, of functions that run on Modal.
+volume = modal.Volume.from_name("cs336-systems-volume", create_if_missing=True)
+TRACE_DIR = Path("/traces")
+
+# Create an app will all needed packages.
+app_image = (
+    modal.Image.debian_slim()
+    # Install cs336-basics before pip_install_from_pyproject tries (and fails)
+    # to install it from PyPI.
+    .apt_install("git")
+    .run_commands(
+      "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
+      "pip install -e /root/assignment1-basics",
+    )
+    # This installs only the dependencies list, ignoring the rest, i.e. it does
+    # not know that cs336-basics should be installed from a local path.
+    .pip_install_from_pyproject("pyproject.toml")
+    .add_local_python_source(
+      # Imported by benchmark_script_modal.py.
+      "benchmark",
+      # Maybe unnecessary.
+      "modal_setup",
+    )
+)
+app = modal.App("cs336-systems", image=app_image)

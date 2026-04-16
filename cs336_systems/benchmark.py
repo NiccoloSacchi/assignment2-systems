@@ -74,17 +74,14 @@ def compute_mean_and_std_pass_times(
   """
   assert torch.cuda.is_available(), "CUDA must be available for running this Benchmark"
   device = torch.device("cuda")
-  print("Creating dummy data and model...")
   input = torch.randint(0, model_config.vocab_size, (batch_size, context_length), device=device)
   model = instantiate_model(model_config, context_length, device)
   
-  print("Warming up...")
   for _ in range(warmup_steps):
     output = model(input)
     if measure_also_backward:
       output.sum().backward()
 
-  print("Measuring...")
   measures_s = []
   for _ in range(measure_steps):
     # Clear gradients manually to measure 'clean' write speed (avoid readiing
