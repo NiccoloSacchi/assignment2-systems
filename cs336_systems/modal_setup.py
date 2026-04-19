@@ -4,7 +4,7 @@ from typing import Optional
 import modal
 
 # Used to persist outputs, e.g. profile traces, of functions that run on Modal.
-volume = modal.Volume.from_name("cs336-systems-volume", create_if_missing=True)
+traces_volume = modal.Volume.from_name("cs336-systems-volume", create_if_missing=True)
 TRACE_DIR = Path("/traces")
 
 # Create an app will all needed packages.

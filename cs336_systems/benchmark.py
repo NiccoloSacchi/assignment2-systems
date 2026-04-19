@@ -114,3 +114,29 @@ def model_size_mb(model: torch.nn.Module) -> float:
   
   total_size_mb = (param_size + buffer_size) / 1024**2
   return total_size_mb
+
+
+def run_benchmarking(model_name: str, warmup_steps: int, synchronize: bool, measure_also_backward: bool):
+  """Run a simple benchmark, timing forward and, optionally, backward pass.
+
+  Args:
+      model_name (str, optional): Model to be initialized to benchmarked.
+        Valid values: "small", "medium", "large", "xl", "2.7B". Defaults to
+        "large".
+      warmup_steps, synchronize, measure_also_backward: See
+        compute_mean_and_std_pass_times.
+  """
+  context_length = 256
+  model_config = MODELS[model_name]
+
+  total_size_mb = model_size_mb(instantiate_model(model_config, context_length))
+  print(f"--- {model_name} model ({total_size_mb:.2f} MB) ---")
+
+  mean, std = compute_mean_and_std_pass_times(
+    model_config = model_config,
+    context_length = context_length,
+    measure_also_backward = measure_also_backward,
+    synchronize = synchronize,
+    warmup_steps = warmup_steps,
+  )
+  print(f'{mean:.4f}s \u00b1 {std:.4f}s')
