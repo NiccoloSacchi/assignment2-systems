@@ -2,19 +2,19 @@
 Run benchmarking on LLM.
 
 Example usages:
-uv run modal run cs336_systems/benchmark_script_modal.py \
+uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --no-synchronize \
     --no-measure-also-backward
 
-uv run modal run cs336_systems/benchmark_script_modal.py \
+uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --synchronize \
     --measure-also-backward
 
-uv run modal run cs336_systems/benchmark_script_modal.py \
+uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --synchronize \
@@ -22,8 +22,8 @@ uv run modal run cs336_systems/benchmark_script_modal.py \
     --local
 """
 
-from modal_setup import app
-from benchmark import run_benchmarking
+from cs336_systems.modal_setup import app
+from cs336_systems.benchmark import run_benchmarking
 
 
 @app.function(

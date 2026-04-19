@@ -21,10 +21,9 @@ app_image = (
     # not know that cs336-basics should be installed from a local path.
     .pip_install_from_pyproject("pyproject.toml")
     .add_local_python_source(
-      # Imported by benchmark_script_modal.py.
-      "benchmark",
-      # Maybe unnecessary.
-      "modal_setup",
+      # Imported by scripts/run_benchmark.py.
+      "cs336_systems.benchmark",
+      "cs336_systems.modal_setup",
     )
 )
 app = modal.App("cs336-systems", image=app_image)
