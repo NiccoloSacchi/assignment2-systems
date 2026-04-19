@@ -32,11 +32,11 @@ from cs336_systems.benchmark import run_benchmarking
     # gpu="A100",  # 80GB. No OOO, GPU memory peaked at ~38GB.
 )
 def run_func(**kwargs):
-    run_benchmarking(**kwargs)
+    return run_benchmarking(**kwargs)
 
 
 @app.local_entrypoint()
-def run(
+def main(
     local: bool = False,
     model_name: str = "large",
     warmup_steps: int = 5,

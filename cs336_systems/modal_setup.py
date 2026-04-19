@@ -20,10 +20,8 @@ app_image = (
     # This installs only the dependencies list, ignoring the rest, i.e. it does
     # not know that cs336-basics should be installed from a local path.
     .pip_install_from_pyproject("pyproject.toml")
-    .add_local_python_source(
-      # Imported by scripts/run_benchmark.py.
-      "cs336_systems.benchmark",
-      "cs336_systems.modal_setup",
-    )
+    # This does not require re-building the image, so it is quicker for
+    # development.
+    .add_local_python_source("cs336_systems")
 )
 app = modal.App("cs336-systems", image=app_image)
