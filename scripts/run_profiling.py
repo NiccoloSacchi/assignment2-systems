@@ -3,10 +3,16 @@ Profile LLM training step.
 
 Example usages:
 uv run modal run scripts/run_profiling.py \
-    --model-name="medium" \
-    --warmup-steps=5 \
-    --active-steps=10 \
-    --no-local
+  --model-name="medium" \
+  --warmup-steps=5 \
+  --active-steps=10 \
+  --run-on-modal
+
+When running on Modal, this with will save a trace in the Modal volume, which
+you can then download with:
+uv run modal volume get cs336-systems-volume \
+  <trace_path> \
+  ~/Downloads/trace.pt.trace.json
 """
 
 from cs336_systems.modal_setup import app, traces_volume, TRACE_DIR
@@ -23,29 +29,25 @@ def run_func(**kwargs):
 
 @app.local_entrypoint()
 def main(
-    local: bool = False,
+    run_on_modal: bool = True,
     model_name: str = "large",
     warmup_steps: int = 5,
     active_steps: int = 10,
 ):
-    """Run benchmarking.
+  """Run benchmarking.
 
-    Args:
-        local (bool, optional): Whether to run locally instead of on Modal.
-          Defaults to False.
-        Others: See profile_training_step function.
-    """
-    kwargs = {
-      "path": TRACE_DIR / model_name,
-      "model_name": model_name,
-      "warmup_steps": warmup_steps,
-      "active_steps": active_steps,
-    }
-    if local:
-        out = run_func.local(**kwargs)
-    else:
-        out = run_func.remote(**kwargs)
-    print(out)
-
-
-
+  Args:
+      run_on_modal (bool, optional): Whether to run on Modal instead of
+        locally. Defaults to True.
+      Others: See profile_training_step function.
+  """
+  kwargs = {
+    "path": TRACE_DIR / model_name,
+    "model_name": model_name,
+    "warmup_steps": warmup_steps,
+    "active_steps": active_steps,
+  }
+  if run_on_modal:
+    run_func.remote(**kwargs)
+  else:
+    profile_training_step(**kwargs)

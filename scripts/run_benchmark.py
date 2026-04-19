@@ -19,7 +19,7 @@ uv run modal run scripts/run_benchmark.py \
     --warmup-steps=5 \
     --synchronize \
     --measure-also-backward \
-    --local
+    --no-run-on-modal
 """
 
 from cs336_systems.modal_setup import app
@@ -37,7 +37,7 @@ def run_func(**kwargs):
 
 @app.local_entrypoint()
 def main(
-    local: bool = False,
+    run_on_modal: bool = True,
     model_name: str = "large",
     warmup_steps: int = 5,
     synchronize: bool = True,
@@ -46,8 +46,8 @@ def main(
     """Run benchmarking.
 
     Args:
-        local (bool, optional): Whether to run locally instead of on Modal.
-          Defaults to False.
+        run_on_modal (bool, optional): Whether to run on Modal instead of locally.
+          Defaults to True.
         Others: See run_benchmarking function.
     """
     kwargs = {
@@ -56,10 +56,7 @@ def main(
         "synchronize": synchronize,
         "measure_also_backward": measure_also_backward,
     }
-    if local:
+    if run_on_modal:
+        run_func.remote(**kwargs)
+    else:
         run_func.local(**kwargs)
-        return
-    run_func.remote(**kwargs)
-
-
-

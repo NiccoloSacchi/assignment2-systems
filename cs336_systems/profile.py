@@ -80,6 +80,6 @@ def profile_training_step(
         key=lambda pth: pth.stat().st_mtime,
         reverse=True,
     )[0]
-    print(f"Trace saved to {trace_path}")
+    print(f"Trace saved to {trace_path.absolute()}")
 
     return trace_path.absolute()
