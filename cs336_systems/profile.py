@@ -11,16 +11,32 @@ def profile_training_step(
     model_name: str,
     warmup_steps: int,
     active_steps: int,
+    record_shapes: bool = False,
+    profile_memory: bool = False,
+    with_stack: bool = False,
+    synchronize: bool = False,
+    measure_optimizer: bool = True,
 ):
     """Use Torch profile to profile a training step.
     
-    Data and model are randomlyinitialized.
+    Data and model are randomly initialized.
 
     Args:
         path (str): Path where to save the profile traces.
         model_name (str): Name of the model to profile.
-        warmup_steps (int): Number of warmup steps.
-        active_steps (int): Number of active steps to profile.
+        warmup_steps (int): See warmup in torch.profiler.schedule.
+        active_steps (int): See active_steps in torch.profiler.schedule.
+        record_shapes (bool, optional): See record_shapes in
+          torch.profiler.profile. Defaults to True.
+        profile_memory (bool, optional): See profile_memory in
+          torch.profiler.profile. Defaults to True.
+        with_stack (bool, optional): See with_stack in torch.profiler.profile.
+          Defaults to True.
+        synchronize (bool, optional): Whether to call torch.cuda.synchronize()
+          after each step. This is necessary to get timings comparable to the
+          timeit approach. Defaults to False.
+        measure_optimizer (bool, optional): Whether to measure the optimizer.
+           step. Defaults to True.
 
     Returns:
         : _description_
@@ -56,21 +72,28 @@ def profile_training_step(
             torch.profiler.ProfilerActivity.CUDA,
         ],
         schedule=schedule,
-        # Useful for seeing the size of the tesnsor operations, e.g. if tensors
+        # Useful for seeing the size of the tensor operations, e.g. if tensors
         # are too small then there is not enough work for the GPU.
-        record_shapes=True,
+        record_shapes=record_shapes,
         # Useful for seeing which ops are allocating large temporary buffers.
         # Introduces overhead as every malloc/free gets intercepted.
-        profile_memory=True,
-        with_stack=True,
+        profile_memory=profile_memory,
+        with_stack=with_stack,
         on_trace_ready=torch.profiler.tensorboard_trace_handler(output_dir),
     ) as prof:
-        for _ in range(warmup_steps + active_steps):
-            logits = model(x)
-            loss = cross_entropy_loss(logits, y)
-            loss.backward()
+      # +1 to close the active window and trigger on_trace_ready.
+      for _ in range(warmup_steps + active_steps + 1):
+        with torch.profiler.record_function("forward"):
+          logits = model(x)
+          loss = cross_entropy_loss(logits, y)
+        with torch.profiler.record_function("backward"):
+          loss.backward()
+        if measure_optimizer:
+          with torch.profiler.record_function("optimizer"):
             optimizer.step()
-            prof.step()
+        if synchronize:
+          torch.cuda.synchronize()
+        prof.step()
 
     print(
         prof.key_averages().table(sort_by="cuda_time_total", row_limit=5)

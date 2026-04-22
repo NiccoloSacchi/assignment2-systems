@@ -2,24 +2,27 @@
 Run benchmarking on LLM.
 
 Example usages:
-uv run modal run scripts/run_benchmark.py \
+  uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --no-synchronize \
     --no-measure-also-backward
 
-uv run modal run scripts/run_benchmark.py \
+  uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --synchronize \
     --measure-also-backward
 
-uv run modal run scripts/run_benchmark.py \
+  uv run modal run scripts/run_benchmark.py \
     --model-name="large" \
     --warmup-steps=5 \
     --synchronize \
     --measure-also-backward \
     --no-run-on-modal
+
+For all options, see help:
+  uv run modal run scripts/run_benchmark.py -h
 """
 
 from cs336_systems.modal_setup import app
