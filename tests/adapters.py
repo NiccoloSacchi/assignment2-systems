@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Type
-
 import torch
 
 
 
-def get_flashattention_autograd_function_pytorch() -> Type:
+def get_flashattention_autograd_function_pytorch() -> type:
     """
     Returns a torch.autograd.Function subclass that implements FlashAttention2.
     The expectation is that this class will implement FlashAttention2
@@ -19,7 +17,7 @@ def get_flashattention_autograd_function_pytorch() -> Type:
     raise NotImplementedError
 
 
-def get_flashattention_autograd_function_triton() -> Type:
+def get_flashattention_autograd_function_triton() -> type:
     """
     Returns a torch.autograd.Function subclass that implements FlashAttention2
     using Triton kernels.
@@ -35,7 +33,7 @@ def get_flashattention_autograd_function_triton() -> Type:
     raise NotImplementedError
 
 
-def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
+def get_ddp(module: torch.nn.Module) -> torch.nn.Module:
     """
     Returns a torch.nn.Module container that handles
     parameter broadcasting and gradient synchronization for
@@ -52,11 +50,11 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
     Returns:
         Instance of a DDP class.
     """
-    # For example: return DDPIndividualParameters(module)
+    # For example: return DDP(module)
     raise NotImplementedError
 
 
-def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -71,56 +69,55 @@ def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, opti
     raise NotImplementedError
 
 
-def get_ddp_bucketed(module: torch.nn.Module, bucket_size_mb: float) -> torch.nn.Module:
+def get_fsdp(module: torch.nn.Module, compute_dtype: torch.dtype | None = None) -> torch.nn.Module:
     """
     Returns a torch.nn.Module container that handles
-    parameter broadcasting and gradient synchronization for
-    distributed data parallel training.
-
-    This container should overlaps communication with backprop computation
-    by asynchronously communicating buckets of gradients as they are ready
-    in the backward pass.
+    fully-sharded data parallel training, including weight sharding,
+    all-gather for forward/backward, and gradient reduce-scatter.
 
     Args:
         module: torch.nn.Module
-            Underlying model to wrap with DDP.
-        bucket_size_mb: The bucket size, in megabytes. If None, use a single
-            bucket of unbounded size.
+            Underlying model to wrap with FSDP.
+        compute_dtype: optional torch.dtype
+            If provided, weights are cast to this dtype before communication
+            and compute, saving bandwidth. Master weights stay in fp32.
     Returns:
-        Instance of a DDP class.
+        Instance of an FSDP class.
     """
+    # For example: return FSDP(module, compute_dtype=compute_dtype)
     raise NotImplementedError
 
 
-def ddp_bucketed_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def fsdp_on_after_backward(fsdp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
 
     Args:
-        ddp_model: torch.nn.Module
-            DDP-wrapped model.
+        fsdp_model: torch.nn.Module
+            FSDP-wrapped model.
         optimizer: torch.optim.Optimizer
-            Optimizer being used with the DDP-wrapped model.
+            Optimizer being used with the FSDP-wrapped model.
     """
-    # For example: ddp_model.finish_gradient_synchronization()
+    # For example: fsdp_model.finish_gradient_synchronization()
     raise NotImplementedError
 
 
-def ddp_bucketed_on_train_batch_start(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def fsdp_gather_full_params(fsdp_model: torch.nn.Module) -> dict[str, torch.Tensor]:
     """
-    Code to run at the very start of the training step.
+    All-gather sharded parameters from the FSDP model to reconstruct full
+    parameter tensors. Replicated parameters are returned as-is.
 
     Args:
-        ddp_model: torch.nn.Module
-            DDP-wrapped model.
-        optimizer: torch.optim.Optimizer
-            Optimizer being used with the DDP-wrapped model.
+        fsdp_model: torch.nn.Module
+            FSDP-wrapped model.
+    Returns:
+        State dictionary mapping parameter names to full (unsharded) tensors.
     """
     raise NotImplementedError
 
 
-def get_sharded_optimizer(params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
+def get_sharded_optimizer(params, optimizer_cls: type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
     """
     Returns a torch.optim.Optimizer that handles optimizer state sharding
     of the given optimizer_cls on the provided parameters.

@@ -2,12 +2,30 @@
 
 All changes we make to the assignment code or PDF will be documented in this file.
 
+## [26.1.1] - 2026-04-20
+- handout: Remove H100-specific references in favor of B200 use and TMA description
+
+## [26.1.0] - 2026-04-16
+- handout: clean up language, fix a few inconsistencies
+- handout: fix triton code compile issue
+- handout: reduce work for profiling bits
+
+## [26.0.0] - 2026-04-15
+- handout: more detailed Nsight Systems profiler
+- handout: replace leaderboard task with full forward and backward pass on two B200s
+- handout: add section on activation checkpointing
+- handout: remove excessive benchmarking, multi-GPU sweeps
+- handout: add FSDP section
+- handout: remove bucketed DDP
+
+
 ## [1.0.5] - 2025-07-03
 ### Fixed
 - code: typos regarding FlashAttention2 in the adapters
 
 ### Added
-- code: .python-version constraint for Python 3.12
+- code: uv build backend for building the package
+
 
 ## [1.0.4] - 2025-04-27
 
