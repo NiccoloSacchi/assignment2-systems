@@ -12,12 +12,10 @@ app_image = (
     modal.Image.debian_slim()
     # Install cs336-basics before pip_install_from_pyproject tries (and fails)
     # to install it from PyPI.
-    .apt_install("git")
-    .run_commands(
-      "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
-      "pip install -e /root/assignment1-basics",
+    .apt_install("git").run_commands(
+        "git clone https://github.com/NiccoloSacchi/assignment1-basics /root/assignment1-basics",
+        "pip install -e /root/assignment1-basics",
     )
-
     # -------------------------------------------------------------------
     # If you have assignment1-basics repo locally and are applying changes to
     # it, e.g. adding torch.profiler.record_function in the code, then you want
@@ -47,7 +45,6 @@ app_image = (
     #   "pip install -e /root/assignment1-basics",
     # )
     # -------------------------------------------------------------------
-
     # This installs only the dependencies list, ignoring the rest, i.e. it does
     # not know that cs336-basics should be installed from a local path.
     .pip_install_from_pyproject("pyproject.toml")

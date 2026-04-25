@@ -31,7 +31,7 @@ from cs336_systems.benchmark import run_benchmarking
 
 @app.function(
     # gpu="T4",    # 16GB. OOO on large.
-    gpu="L4",    # 24GB. OOO on xl.
+    gpu="L4",  # 24GB. OOO on xl.
     # gpu="A100",  # 80GB. No OOO, GPU memory peaked at ~38GB.
 )
 def run_func(**kwargs):

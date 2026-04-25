@@ -18,7 +18,7 @@ def profile_training_step(
     measure_optimizer: bool = True,
 ):
     """Use Torch profile to profile a training step.
-    
+
     Data and model are randomly initialized.
 
     Args:
@@ -42,20 +42,24 @@ def profile_training_step(
         : _description_
     """
     assert torch.cuda.is_available(), "CUDA must be available for profiling"
-    
+
     # Reasonable defaults.
     context_length = 256
     batch_size = 4
     device = torch.device("cuda")
-    
+
     # Create folder for the traces.
     output_dir = path / datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Instantiate input, output, model, and optimizer.
     model_config = MODELS[model_name]
-    x = torch.randint(0, model_config.vocab_size, (batch_size, context_length), device=device)
-    y = torch.randint(0, model_config.vocab_size, (batch_size, context_length), device=device)
+    x = torch.randint(
+        0, model_config.vocab_size, (batch_size, context_length), device=device
+    )
+    y = torch.randint(
+        0, model_config.vocab_size, (batch_size, context_length), device=device
+    )
     model = instantiate_model(model_config, context_length, device=device)
     optimizer = AdamW(model.parameters())
 
@@ -81,23 +85,21 @@ def profile_training_step(
         with_stack=with_stack,
         on_trace_ready=torch.profiler.tensorboard_trace_handler(output_dir),
     ) as prof:
-      # +1 to close the active window and trigger on_trace_ready.
-      for _ in range(warmup_steps + active_steps + 1):
-        with torch.profiler.record_function("forward"):
-          logits = model(x)
-          loss = cross_entropy_loss(logits, y)
-        with torch.profiler.record_function("backward"):
-          loss.backward()
-        if measure_optimizer:
-          with torch.profiler.record_function("optimizer"):
-            optimizer.step()
-        if synchronize:
-          torch.cuda.synchronize()
-        prof.step()
+        # +1 to close the active window and trigger on_trace_ready.
+        for _ in range(warmup_steps + active_steps + 1):
+            with torch.profiler.record_function("forward"):
+                logits = model(x)
+                loss = cross_entropy_loss(logits, y)
+            with torch.profiler.record_function("backward"):
+                loss.backward()
+            if measure_optimizer:
+                with torch.profiler.record_function("optimizer"):
+                    optimizer.step()
+            if synchronize:
+                torch.cuda.synchronize()
+            prof.step()
 
-    print(
-        prof.key_averages().table(sort_by="cuda_time_total", row_limit=5)
-    )
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=5))
     trace_path = sorted(
         output_dir.glob("**/*.pt.trace.json"),
         key=lambda pth: pth.stat().st_mtime,

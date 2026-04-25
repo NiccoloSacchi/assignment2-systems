@@ -21,14 +21,16 @@ you can then download with:
 from cs336_systems.modal_setup import app, traces_volume, TRACE_DIR
 from cs336_systems.profile import profile_training_step
 
+
 @app.function(
-  # gpu="T4",    # 16GB. OOO on large.
-  # gpu="L4",    # 24GB. OOO on xl.
-  gpu="A100",  # 80GB. No OOO, GPU memory peaked at ~38GB.
-  volumes={TRACE_DIR: traces_volume},
+    # gpu="T4",    # 16GB. OOO on large.
+    # gpu="L4",    # 24GB. OOO on xl.
+    gpu="A100",  # 80GB. No OOO, GPU memory peaked at ~38GB.
+    volumes={TRACE_DIR: traces_volume},
 )
 def run_func(**kwargs):
-  return profile_training_step(**kwargs)
+    return profile_training_step(**kwargs)
+
 
 @app.local_entrypoint()
 def main(
@@ -39,28 +41,28 @@ def main(
     record_shapes: bool = False,
     profile_memory: bool = False,
     with_stack: bool = False,
-    synchronize: bool = True,
+    synchronize: bool = False,
     measure_optimizer: bool = True,
 ):
-  """Run benchmarking.
+    """Run benchmarking.
 
-  Args:
-      run_on_modal (bool, optional): Whether to run on Modal instead of
-        locally. Defaults to True.
-      Others: See profile_training_step function.
-  """
-  kwargs = {
-    "path": TRACE_DIR / model_name,
-    "model_name": model_name,
-    "warmup_steps": warmup_steps,
-    "active_steps": active_steps,
-    "record_shapes": record_shapes,
-    "profile_memory": profile_memory,
-    "with_stack": with_stack,
-    "synchronize": synchronize,
-    "measure_optimizer": measure_optimizer,
-  }
-  if run_on_modal:
-    run_func.remote(**kwargs)
-  else:
-    run_func.local(**kwargs)
+    Args:
+        run_on_modal (bool, optional): Whether to run on Modal instead of
+          locally. Defaults to True.
+        Others: See profile_training_step function.
+    """
+    kwargs = {
+        "path": TRACE_DIR / model_name,
+        "model_name": model_name,
+        "warmup_steps": warmup_steps,
+        "active_steps": active_steps,
+        "record_shapes": record_shapes,
+        "profile_memory": profile_memory,
+        "with_stack": with_stack,
+        "synchronize": synchronize,
+        "measure_optimizer": measure_optimizer,
+    }
+    if run_on_modal:
+        run_func.remote(**kwargs)
+    else:
+        run_func.local(**kwargs)
