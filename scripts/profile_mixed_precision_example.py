@@ -61,7 +61,9 @@ def run_func():
 
     # Warm up the GPU.
     _ = model(input)
-    with torch.amp.autocast(device_type="cuda"):
+    with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+        _ = model(input)
+    with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
         _ = model(input)
 
     with torch.profiler.profile(
@@ -70,12 +72,14 @@ def run_func():
             torch.profiler.ProfilerActivity.CUDA,
         ],
         on_trace_ready=torch.profiler.tensorboard_trace_handler(output_dir),
-        schedule=torch.profiler.schedule(wait=0, warmup=1, active=2, repeat=0),
+        schedule=torch.profiler.schedule(wait=0, warmup=1, active=3, repeat=0),
     ) as prof:
 
         # Warm up the profiler.
         _ = model(input)
-        with torch.amp.autocast(device_type="cuda"):
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+            _ = model(input)
+        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
             _ = model(input)
         prof.step()
 
@@ -83,8 +87,13 @@ def run_func():
             _ = model(input)
         prof.step()
 
-        with torch.profiler.record_function("with autocast"):
-            with torch.amp.autocast(device_type="cuda"):
+        with torch.profiler.record_function("with autocast FP16"):
+            with torch.amp.autocast(device_type="cuda", dtype=torch.float16):
+                _ = model(input)
+        prof.step()
+
+        with torch.profiler.record_function("with autocast BF16"):
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
                 _ = model(input)
         prof.step()
 
