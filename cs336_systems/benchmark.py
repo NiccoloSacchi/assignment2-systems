@@ -1,4 +1,6 @@
-from cs336_systems.configs import MODELS, ModelConfig, instantiate_model
+from contextlib import nullcontext
+
+from cs336_systems.configs import ModelConfig, instantiate_model
 from timeit import default_timer as timer
 import numpy as np
 import torch
@@ -12,11 +14,12 @@ def compute_mean_and_std_pass_times(
     warmup_steps: int = 5,
     measure_steps: int = 10,
     batch_size: int = 4,
-) -> tuple[int, int]:
+    mixed_precision_dtype: torch.dtype = None,
+) -> tuple[float, float]:
     """Compute the mean and std times for the forward pass.
 
-    Compute the mean and std times for the forward pass for a model with the given
-    config and context length.
+    Compute the mean and std times for the forward pass for a model with the
+    given config and context length.
 
     Args:
         model_config (ModelConfig): The configuration of the model to benchmark.
@@ -28,9 +31,11 @@ def compute_mean_and_std_pass_times(
         measure_steps (int, optional): The number of measurement steps. Defaults
           to 10.
         batch_size (int, optional): The batch size. Defaults to 4.
+        mixed_precision_dtype (torch.dtype, optional): The data type to use for
+          mixed precision (torch autocast). Defaults to None.
 
     Returns:
-        tuple[int, int]: The mean and standard deviation of the forward pass
+        tuple[float, float]: The mean and standard deviation of the forward pass
           times.
     """
 
@@ -43,23 +48,24 @@ def compute_mean_and_std_pass_times(
     )
     model = instantiate_model(model_config, context_length, device)
 
+    context = nullcontext()
+    if mixed_precision_dtype:
+        torch.autocast("cuda", dtype=mixed_precision_dtype)
+
     for _ in range(warmup_steps):
-        output = model(batch)
+        with context:
+            output = model(batch)
         if measure_also_backward:
             output.sum().backward()
 
     measures_s = []
     for _ in range(measure_steps):
-        # Clear gradients manually to measure 'clean' write speed (avoid readiing
-        # and summing gradients from the previous step).
-        for p in model.parameters():
-            p.grad = None
-
         # Make sure all operations have finished before starting to measure.
         torch.cuda.synchronize()
 
         start = timer()
-        output = model(batch)
+        with context:
+            output = model(batch)
         if measure_also_backward:
             output.sum().backward()
         if synchronize:
@@ -79,31 +85,3 @@ def model_size_mb(model: torch.nn.Module) -> float:
 
     total_size_mb = (param_size + buffer_size) / 1024**2
     return total_size_mb
-
-
-def run_benchmarking(
-    model_name: str, warmup_steps: int, synchronize: bool, measure_also_backward: bool
-):
-    """Run a simple benchmark, timing forward and, optionally, backward pass.
-
-    Args:
-        model_name (str, optional): Model to be initialized to benchmarked.
-          Valid values: "small", "medium", "large", "xl", "2.7B". Defaults to
-          "large".
-        warmup_steps, synchronize, measure_also_backward: See
-          compute_mean_and_std_pass_times.
-    """
-    context_length = 256
-    model_config = MODELS[model_name]
-
-    total_size_mb = model_size_mb(instantiate_model(model_config, context_length))
-    print(f"--- {model_name} model ({total_size_mb:.2f} MB) ---")
-
-    mean, std = compute_mean_and_std_pass_times(
-        model_config=model_config,
-        context_length=context_length,
-        measure_also_backward=measure_also_backward,
-        synchronize=synchronize,
-        warmup_steps=warmup_steps,
-    )
-    print(f"{mean:.4f}s \u00b1 {std:.4f}s")
