@@ -9,41 +9,51 @@ For all options, see help:
   uv run modal run scripts/benchmark.py -h
 """
 
+from contextlib import nullcontext
 import itertools
 
 import torch
 from cs336_systems.configs import MODELS, instantiate_model, ModelConfig
 from cs336_systems.modal_setup import app
-from cs336_systems.benchmark import compute_mean_and_std_pass_times, model_size_mb
+from cs336_systems.benchmark import training_steps, model_size_mb
 
 
 @app.function(
     # gpu="T4",    # 16GB. OOO on large.
     # gpu="L4",  # 24GB. OOO on xl.
     gpu="A100",  # 40GB. OOO on 2.7B model with mixed precision.
-    # gpu="A100-80GB",  # 80GB. No OOO, GPU memory peaked at ~38GB.
+    gpu="A100-80GB",  # 80GB. No OOO, GPU memory peaked at ~38GB.
 )
 def run_func(
     model_name: str,
     context_length: int,
     warmup_steps: int,
     synchronize: bool,
-    measure_also_backward: bool,
+    do_backward: bool,
     mixed_precision: bool,
 ):
-    model_config = MODELS[model_name]
     # print(
     #     f"Running benchmark for {model_name} model "
     #     f"mixed_precision={mixed_precision}."
     # )
-    return compute_mean_and_std_pass_times(
-        model_config=model_config,
+    autocast_context = nullcontext()
+    if mixed_precision:
+        autocast_context = torch.autocast("cuda", dtype=torch.bfloat16)
+
+    mean, std = training_steps(
+        model_config=MODELS[model_name],
         context_length=context_length,
-        measure_also_backward=measure_also_backward,
+        batch_size=4,
+        do_backward=do_backward,
+        do_optimize=False,
         synchronize=synchronize,
         warmup_steps=warmup_steps,
-        mixed_precision_dtype=mixed_precision,
+        measure_steps=10,
+        autocast_context=autocast_context,
+        profiler_context=nullcontext(),
+        path=None,
     )
+    return mean, std
 
 
 @app.local_entrypoint()
@@ -64,15 +74,15 @@ def main(
     context_length_values = [256]
     warmup_steps_values = [5]
     synchronize_values = [True]
-    measure_also_backward_values = [True]
-    mixed_precision_values = [torch.bfloat16]
+    do_backward_values = [True]
+    mixed_precision_values = [None, torch.bfloat16]
 
     experiments = list(
         itertools.product(
             context_length_values,
             warmup_steps_values,
             synchronize_values,
-            measure_also_backward_values,
+            do_backward_values,
             mixed_precision_values,
         )
     )
