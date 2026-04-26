@@ -31,6 +31,7 @@ def training_steps(
     measure_steps: int = 10,
     autocast_context: torch.autocast | nullcontext = nullcontext(),
     profiler_context: torch.profiler.profile | nullcontext = nullcontext(),
+    memory_profile_path: str | None = None,
 ) -> tuple[float, float]:
     """Compute the mean and std times for the forward pass.
 
@@ -54,6 +55,9 @@ def training_steps(
           context to use. Defaults to nullcontext().
         profiler_context (torch.profiler.profile | nullcontext, optional): The
           profiler context to use. Defaults to nullcontext().
+        memory_profile_path (str | None, optional): If not None, enable memory
+          profiling and save the memory snapshot to the specified path. Defaults
+          to None.
 
     Returns:
         tuple[float, float]: The mean and standard deviation of the forward pass
@@ -90,6 +94,10 @@ def training_steps(
     # Make sure all warmup operations completed.
     torch.cuda.synchronize()
 
+    if memory_profile_path is not None:
+        # Enable memory profiling.
+        torch.cuda.memory._record_memory_history(max_entries=1000000)
+
     with profiler_context as prof:
         measures_s = []
         for _ in range(measure_steps):
@@ -111,4 +119,11 @@ def training_steps(
 
             if isinstance(profiler_context, torch.profiler.profile):
                 prof.step()
+
+    # Save a pickle file to be loaded by PyTorch's online tool.
+    if memory_profile_path is not None:
+        torch.cuda.memory._dump_snapshot(memory_profile_path)
+        # Stop recording history.
+        torch.cuda.memory._record_memory_history(enabled=None)
+
     return np.mean(measures_s), np.std(measures_s)

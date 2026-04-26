@@ -24,17 +24,16 @@ from pathlib import Path
 import torch
 from cs336_systems.benchmark import training_steps
 from cs336_systems.configs import MODELS
-from cs336_systems.modal_setup import app, traces_volume, TRACE_DIR
+from cs336_systems.modal_setup import VOLUME_DIR, app, volume
 
 
 @app.function(
     # gpu="T4",    # 16GB. OOO on large.
     # gpu="L4",    # 24GB. OOO on xl.
     gpu="A100",  # 40GB. No OOO, GPU memory peaked at ~38GB.
-    volumes={TRACE_DIR: traces_volume},
+    volumes={VOLUME_DIR: volume},
 )
 def run_func(
-    path: Path,
     model_name: str,
     warmup_steps: int,
     active_steps: int,
@@ -45,10 +44,8 @@ def run_func(
     do_backward: bool = True,
     do_optimize: bool = True,
 ):
-    # return profile_training_step(**kwargs)
-
     # Create folder for the traces.
-    output_dir = path / datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = VOLUME_DIR / model_name / datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Why so many parameters for the schedule? Profiling is usually done during
@@ -117,7 +114,6 @@ def main(
         Others: See profile_training_step function.
     """
     kwargs = {
-        "path": TRACE_DIR / model_name,
         "model_name": model_name,
         "warmup_steps": warmup_steps,
         "active_steps": active_steps,
