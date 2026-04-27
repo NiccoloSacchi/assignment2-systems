@@ -28,8 +28,8 @@ from cs336_systems.benchmark import training_steps
 @app.function(
     # gpu="T4",    # 16GB. OOO on large.
     # gpu="L4",  # 24GB. OOO on xl.
-    gpu="A100",  # 40GB. OOO on 2.7B model with mixed precision.
-    # gpu="A100-80GB",  # 80GB. No OOO, GPU memory peaked at ~38GB.
+    # gpu="A100",  # 40GB. OOO on 2.7B model with mixed precision.
+    gpu="A100-80GB",  # 80GB. No OOO, GPU memory peaked at ~38GB.
     volumes={VOLUME_DIR: my_volume},
 )
 def run_func(
@@ -42,10 +42,6 @@ def run_func(
     mixed_precision: bool,
     profile_memory: bool = False,
 ) -> tuple[float, float]:
-    # print(
-    #     f"Running benchmark for {model_name} model "
-    #     f"mixed_precision={mixed_precision}."
-    # )
     autocast_context = nullcontext()
     if mixed_precision:
         autocast_context = torch.autocast("cuda", dtype=torch.bfloat16)
@@ -54,7 +50,7 @@ def run_func(
     if profile_memory:
         memory_profile_path = (
             VOLUME_DIR
-            / model_name
+            / f"{model_name}-context_length={context_length}-mixed_precision={mixed_precision}"
             / datetime.now().strftime("%Y%m%d_%H%M%S")
             / "memory_profile.pickle"
         )
@@ -94,14 +90,19 @@ def main(
 
     # Hardcode here the experiments to run (Modal doesn't support passing lists
     # or sets as arguments, so we can't use the CLI for this).
-    context_length_values = [256]
-    warmup_steps_values = [5]
+    context_length_values = [
+        # 128,
+        # 256,
+        512,
+        # 2048,
+    ]
+    warmup_steps_values = [0, 5]
     synchronize_values = [True]
     do_backward_values = [True]
-    do_optimize_values = [False]
+    do_optimize_values = [True]
     mixed_precision_values = [
         None,
-        # torch.bfloat16,
+        torch.bfloat16,
     ]
 
     experiments = list(
@@ -120,6 +121,13 @@ def main(
     for model_name in model_name_values:
         model_calls[model_name] = []
         for exp in experiments:
+            # Skip invalid experiments.
+            do_backward, do_optimize = exp[3], exp[4]
+            if do_optimize and not do_backward:
+                continue
+            # Temporary: avoid running only backward without optimization.
+            if do_optimize != do_backward:
+                continue
             call = run_func.spawn(model_name, *exp, profile_memory=profile_memory)
             model_calls[model_name].append((exp, call))
 

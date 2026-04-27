@@ -1,7 +1,6 @@
 from contextlib import nullcontext
 
 from cs336_basics.optimizer import AdamW
-from matplotlib.style import context
 from cs336_systems.configs import ModelConfig, instantiate_model
 from cs336_basics.loss import cross_entropy_loss
 from timeit import default_timer as timer
@@ -85,8 +84,8 @@ def training_steps(
     for _ in range(warmup_steps):
         with autocast_context:
             logits = model(x)
-        if do_backward:
             loss = cross_entropy_loss(logits, y)
+        if do_backward:
             loss.backward()
             if do_optimize:
                 optimizer.step()
