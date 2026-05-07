@@ -25,6 +25,7 @@ MODELS = {
 def instantiate_model(
     model_config: ModelConfig,
     context_length: int,
+    num_checkpoints: int = 0,
     device: torch.device = torch.device("cpu"),
 ) -> torch.nn.Module:
     """Instantiate a model with the given config."""
@@ -38,4 +39,5 @@ def instantiate_model(
         rope_theta=10000.0,
         device=device,
         dtype=torch.float32,
+        num_checkpoints=num_checkpoints,
     )
