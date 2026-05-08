@@ -2,7 +2,7 @@
 Compute residual size when using checkpointing
 
 Example usages:
-  uv run modal run scripts/checkpoint_optimal_transformer_block.py \
+  uv run modal run scripts/checkpoint_llm.py \
     --model-name="xl" \
     --num-checkpoints=48
 """

@@ -14,7 +14,7 @@ def run():
             return t
         nonlocal total_size_bytes
         total_size_bytes += t.numel() * t.element_size()
-        shape, dtype, grad_fn = t.shape, t.dtype, t.grad_fn
+        # shape, dtype, grad_fn = t.shape, t.dtype, t.grad_fn
         # print(f"Saving residual: {shape=}, {dtype=}, {grad_fn=}")
         return t
 
