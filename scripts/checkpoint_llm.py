@@ -10,6 +10,7 @@ Example usages:
 import torch
 from cs336_systems.modal_setup import app
 from cs336_systems.configs import MODELS, instantiate_model
+from cs336_basics.loss import cross_entropy_loss
 
 
 @app.function(
@@ -27,6 +28,9 @@ def run(model_name: str, num_checkpoints: int):
         (batch_size, context_length),
         device=device,
     )
+    y = torch.randint(
+        0, model_config.vocab_size, (batch_size, context_length), device=device
+    )
 
     model = instantiate_model(model_config, context_length, num_checkpoints, device)
     model = torch.compile(model, fullgraph=True)
@@ -42,7 +46,11 @@ def run(model_name: str, num_checkpoints: int):
         return t
 
     with torch.autograd.graph.saved_tensors_hooks(pack_hook, lambda t: t):
-        y = model(x)
+        logits = model(x)
+        # Backward pass to trigger the computation of the gradient. The fewer
+        # the checkpoints, the more residuals need to be stored in memory.
+        loss = cross_entropy_loss(logits, y)
+        loss.backward()
         print(f"Total size of saved tensor {total_size_bytes / (1024**2):.2f} MiB")
     print(f"Peak memory: {torch.cuda.max_memory_allocated()/(1024**2):.2f} MiB")
 
