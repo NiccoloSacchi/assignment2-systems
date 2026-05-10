@@ -15,7 +15,7 @@ from cs336_basics.loss import cross_entropy_loss
 
 @app.function(
     gpu="A100",  # 40GB.
-)  # Any GPU is fine for faster scheduling.
+)
 def run(model_name: str, num_checkpoints: int):
     device = torch.device("cuda")
     batch_size = 4
