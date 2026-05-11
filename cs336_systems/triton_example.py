@@ -243,11 +243,12 @@ class WeightedSumFunc(torch.autograd.Function):
         n_rows, D = x.shape
         # Our strategy is for each thread block to first write to a partial buffer,
         # then we reduce over this buffer to get the final gradient.
+        grid_size = triton.cdiv(n_rows, ROWS_TILE_SIZE)
         partial_grad_weight = torch.empty(
-            (triton.cdiv(n_rows, ROWS_TILE_SIZE), D), device=x.device, dtype=x.dtype
+            (grid_size, D), device=x.device, dtype=x.dtype
         )
         grad_x = torch.empty_like(x)
-        weighted_sum_backward[(triton.cdiv(n_rows, ROWS_TILE_SIZE),)](
+        weighted_sum_backward[(grid_size,)](
             x,
             weight,
             grad_out,
@@ -268,6 +269,6 @@ class WeightedSumFunc(torch.autograd.Function):
         )
         grad_weight = partial_grad_weight.sum(axis=0)
 
-        # Make sure grad_x is of the correct shape.
+        # Make sure grad_x is of the original shape.
         grad_x = grad_x.reshape(ctx.input_shape)
         return grad_x, grad_weight
