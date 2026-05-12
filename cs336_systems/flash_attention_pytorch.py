@@ -1,3 +1,9 @@
+"""Flash attention implementation.
+
+Used to debug the actual triton implementation. Tested with:
+uv run modal run scripts/execute_tests.py --k test_flash_forward_pass_pytorch
+"""
+
 import triton
 import math
 import torch
@@ -6,7 +12,7 @@ from jaxtyping import Float
 from einops import rearrange, einsum
 
 
-def pytorch_flash_attention(
+def flash_fwd_kernel(
     # query_tile_index and batch_index represent the program IDs in a Triton
     # grid.
     query_tile_index: int,
@@ -17,6 +23,9 @@ def pytorch_flash_attention(
     is_causal: bool,
     O: Float[Tensor, "n_sequences queries d"],
     L: Float[Tensor, "n_sequences queries"],
+    N_KEYS: int,
+    softmax_scale: float,
+    D: int,
     Q_TILE_SIZE: int,
     K_TILE_SIZE: int,
 ):
@@ -25,10 +34,7 @@ def pytorch_flash_attention(
     K_seq = K[seq_index]
     V_seq = V[seq_index]
 
-    _, d = Q_seq.shape
     device, dtype = Q_seq.device, Q_seq.dtype
-    n_keys = K_seq.shape[0]
-    softmax_scale = 1.0 / math.sqrt(d)
 
     # Load the specific Query tile for this program instance
     q_start = query_tile_index * Q_TILE_SIZE
@@ -38,10 +44,9 @@ def pytorch_flash_attention(
     # Initialize accumulators in "SRAM" (Registers).
     mi = torch.full((queries_in_tile, 1), float("-inf"), device=device, dtype=dtype)
     li = torch.zeros((queries_in_tile, 1), device=device, dtype=dtype)
-    oi = torch.zeros((queries_in_tile, d), device=device, dtype=dtype)
+    oi = torch.zeros((queries_in_tile, D), device=device, dtype=dtype)
 
-    # The single loop over key tiles, as required by Algorithm 1
-    for k_tile_idx in range(0, n_keys, K_TILE_SIZE):
+    for k_tile_idx in range(0, N_KEYS, K_TILE_SIZE):
         k_tile = K_seq[k_tile_idx : k_tile_idx + K_TILE_SIZE, :]
         v_tile = V_seq[k_tile_idx : k_tile_idx + K_TILE_SIZE, :]
         s_tile = (
@@ -89,37 +94,44 @@ class PyTorchFlashAttention(torch.autograd.Function):
         assert Q.shape[-1] == K.shape[-1] == V.shape[-1], "Embedding D mismatch"
         assert K.shape[-2] == V.shape[-2], "Sequence length Nk mismatch"
 
-        ctx.ROWS_TILE_SIZE = 16
         ctx.Q_TILE_SIZE = 64
         ctx.K_TILE_SIZE = 64
 
         # Reshape the inputs to 3D tensors to simplify the algorithm.
-        output_shape = Q.shape
         Q_flat = rearrange(Q, "... queries d -> (...) queries d")
         K_flat = rearrange(K, "... keys d -> (...) keys d")
         V_flat = rearrange(V, "... keys d -> (...) keys d")
 
-        n_sequences, n_queries, _ = Q_flat.shape
-        n_q_tiles = triton.cdiv(n_queries, ctx.Q_TILE_SIZE)
+        n_sequences, n_queries, d = Q_flat.shape
+        n_keys = K_flat.shape[1]
+        softmax_scale = 1.0 / math.sqrt(d)
 
         O_flat = torch.zeros_like(Q_flat)
         L_flat = torch.zeros((n_sequences, n_queries), device=Q.device, dtype=Q.dtype)
 
-        # Launch grid simulation: (Tq, batch_size)
+        # Launch grid simulation: (#q tiles, #sequences)
+        n_q_tiles = triton.cdiv(n_queries, ctx.Q_TILE_SIZE)
         for seq_index in range(n_sequences):
             for query_tile_index in range(n_q_tiles):
-                pytorch_flash_attention(
-                    query_tile_index,
-                    seq_index,
-                    Q_flat,
-                    K_flat,
-                    V_flat,
-                    is_causal,
-                    O_flat,
-                    L_flat,
-                    ctx.Q_TILE_SIZE,
-                    ctx.K_TILE_SIZE,
+                flash_fwd_kernel(
+                    query_tile_index=query_tile_index,
+                    seq_index=seq_index,
+                    Q=Q_flat,
+                    K=K_flat,
+                    V=V_flat,
+                    is_causal=is_causal,
+                    O=O_flat,
+                    L=L_flat,
+                    N_KEYS=n_keys,
+                    softmax_scale=softmax_scale,
+                    D=d,
+                    Q_TILE_SIZE=ctx.Q_TILE_SIZE,
+                    K_TILE_SIZE=ctx.K_TILE_SIZE,
                 )
 
         ctx.save_for_backward(Q_flat, K_flat, V_flat, O_flat, L_flat)
-        return O_flat.view(output_shape)
+        return O_flat.view(Q.shape)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        raise NotImplementedError("Backward pass not yet implemented.")
