@@ -88,9 +88,6 @@ def weighted_sum_fwd(
     tl.store(output_block_ptr, output, boundary_check=(0,))
 
 
-triton.jit
-
-
 @triton.jit
 def weighted_sum_backward(
     x_ptr,
