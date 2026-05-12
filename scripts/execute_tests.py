@@ -3,24 +3,26 @@ Execute unit tests remotely.
 
 Example usages:
   uv run modal run scripts/execute_tests.py
+  uv run modal run scripts/execute_tests.py --k test_flash_forward_pass_pytorch
 """
 
 from cs336_systems.modal_setup import app
+import pytest
 
 
 @app.function(
     gpu="A10G",  # Tests for Triton kernels require a GPU
 )
-def run_pytest():
-    import pytest
-    import sys
+def run_pytest(k):
+    # Run pytest on the /root/tests directory where the modal app has put the
+    # tests to be executed.
+    args = ["/root/tests"]
+    if k:
+        args.extend(["-k", k])
 
-    # Run pytest on the /root directory where your code is mounted
-    # -s allows you to see print statements in the Modal logs
-    exit_code = pytest.main(["-s", "/root/tests"])
-    sys.exit(exit_code)
+    pytest.main(args)
 
 
-if __name__ == "__main__":
-    with app.run():
-        run_pytest.remote()
+@app.local_entrypoint()
+def main(k: str = ""):
+    run_pytest.remote(k)
