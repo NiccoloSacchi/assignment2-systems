@@ -143,7 +143,7 @@ class TritonFlashAttention(torch.autograd.Function):
         Q: Float[Tensor, "... queries d"],
         K: Float[Tensor, "... keys d"],
         V: Float[Tensor, "... keys d"],
-        is_causal: bool,
+        is_causal: bool = False,
     ) -> Float[Tensor, "... queries d"]:
         assert Q.shape[:-2] == K.shape[:-2] == V.shape[:-2], "Batch/Head mismatch"
         assert Q.shape[-1] == K.shape[-1] == V.shape[-1], "Embedding D mismatch"
@@ -151,6 +151,7 @@ class TritonFlashAttention(torch.autograd.Function):
 
         ctx.Q_TILE_SIZE = 64
         ctx.K_TILE_SIZE = 64
+        ctx.is_causal = is_causal  # Needed for the backward.
 
         # Reshape the inputs to 3D tensors to simplify the algorithm.
         # contiguous() is needed to make sure the tl.make_block_ptr API to

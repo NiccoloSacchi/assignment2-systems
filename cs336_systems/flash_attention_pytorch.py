@@ -4,7 +4,6 @@ Used to debug the actual triton implementation. Tested with:
 uv run modal run scripts/execute_tests.py --k test_flash_forward_pass_pytorch
 """
 
-import triton
 import math
 import torch
 from torch import Tensor
@@ -88,7 +87,7 @@ class PyTorchFlashAttention(torch.autograd.Function):
         Q: Float[Tensor, "... queries d"],
         K: Float[Tensor, "... keys d"],
         V: Float[Tensor, "... keys d"],
-        is_causal: bool,
+        is_causal: bool = False,
     ) -> Float[Tensor, "... queries d"]:
         assert Q.shape[:-2] == K.shape[:-2] == V.shape[:-2], "Batch/Head mismatch"
         assert Q.shape[-1] == K.shape[-1] == V.shape[-1], "Embedding D mismatch"
@@ -96,6 +95,7 @@ class PyTorchFlashAttention(torch.autograd.Function):
 
         ctx.Q_TILE_SIZE = 64
         ctx.K_TILE_SIZE = 64
+        ctx.is_causal = is_causal
 
         # Reshape the inputs to 3D tensors to simplify the algorithm.
         Q_flat = rearrange(Q, "... queries d -> (...) queries d")
@@ -110,7 +110,7 @@ class PyTorchFlashAttention(torch.autograd.Function):
         L_flat = torch.zeros((n_sequences, n_queries), device=Q.device, dtype=Q.dtype)
 
         # Launch grid simulation: (#q tiles, #sequences)
-        n_q_tiles = triton.cdiv(n_queries, ctx.Q_TILE_SIZE)
+        n_q_tiles = math.ceil(n_queries / ctx.Q_TILE_SIZE)
         for seq_index in range(n_sequences):
             for query_tile_index in range(n_q_tiles):
                 flash_fwd_kernel(
@@ -134,4 +134,5 @@ class PyTorchFlashAttention(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+
         raise NotImplementedError("Backward pass not yet implemented.")
