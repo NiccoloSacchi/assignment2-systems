@@ -51,5 +51,12 @@ app_image = (
     # This does not require re-building the image, so it is quicker for
     # development.
     .add_local_python_source("cs336_systems")
+    # Move also tests in the image so that we can run them remotely (they need a
+    # GPU and also triton).
+    .add_local_dir(
+        local_path="tests",
+        remote_path="/root/tests",
+        # copy=True,
+    )
 )
 app = modal.App("cs336-systems", image=app_image)
