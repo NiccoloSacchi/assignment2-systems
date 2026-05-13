@@ -238,7 +238,11 @@ class PyTorchFlashAttention(torch.autograd.Function):
             dQ_flat = torch.zeros_like(Q_flat)
             dK_flat = torch.zeros_like(K_flat)
             dV_flat = torch.zeros_like(V_flat)
-            D = einsum(dO_flat, O_flat, "... n d, ... n d -> ... n")
+            D = einsum(
+                dO_flat,
+                O_flat,
+                "num_sequences queries d, num_sequences queries d -> num_sequences queries",
+            )
             softmax_scale = 1.0 / math.sqrt(d)
             for seq_index in range(n_sequences):
                 for key_tile_index in range(n_k_tiles):
