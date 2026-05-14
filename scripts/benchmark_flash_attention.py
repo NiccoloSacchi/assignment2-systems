@@ -24,6 +24,7 @@ def attention_pytorch(q, k, v, is_causal):
 
 @app.function(
     gpu="A100-40GB",
+    timeout=600,
 )
 def run():
     # Triton imports only work when a CUDA GPU is available.
@@ -96,14 +97,21 @@ def run():
                             rep=100,
                         )
                         tot_ms = fwd_ms + bwd_ms
-                    except torch.cuda.OutOfMemoryError:
-                        fwd_ms = bwd_ms = tot_ms = "OOM"
+                        peak_memory_mb = torch.cuda.max_memory_allocated() / (1024**2)
+                    except (
+                        torch.cuda.OutOfMemoryError,
+                        triton.runtime.errors.OutOfResources,
+                    ) as e:
+                        fwd_ms = bwd_ms = tot_ms = peak_memory_mb = "OOM"
+                        print(
+                            f"[ERROR] {impl_name} failed (seq_len={seq_len}, d_model={d_model}, dtype={dtype}): {e}"
+                        )
                     except Exception:
                         print(
                             f"[ERROR] {impl_name} failed (seq_len={seq_len}, d_model={d_model}, dtype={dtype}):"
                         )
                         traceback.print_exc()
-                        fwd_ms = bwd_ms = tot_ms = float("NaN")
+                        fwd_ms = bwd_ms = tot_ms = peak_memory_mb = float("NaN")
 
                     results.append(
                         {
@@ -114,8 +122,7 @@ def run():
                             "forward_ms": fwd_ms,
                             "backward_ms": bwd_ms,
                             "tot_ms": tot_ms,
-                            "peak_memory_mb": torch.cuda.max_memory_allocated()
-                            / (1024**2),
+                            "peak_memory_mb": peak_memory_mb,
                         }
                     )
                     print("Benchmarked: ", results[-1])

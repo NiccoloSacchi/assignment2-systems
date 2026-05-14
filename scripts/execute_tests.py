@@ -11,7 +11,7 @@ import pytest
 
 
 @app.function(
-    gpu="A10G",  # Tests for Triton kernels require a GPU
+    gpu="A100",  # Tests for Triton kernels require a GPU
 )
 def run_pytest(k):
     # Run pytest on the /root/tests directory where the modal app has put the

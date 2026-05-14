@@ -19,6 +19,7 @@ dependencies = [
     "modal>=1.4.1",
     "ty>=0.0.29",
     "ruff>=0.15.10",
+    "seaborn>=0.13.2",
 ]
 
 [build-system]

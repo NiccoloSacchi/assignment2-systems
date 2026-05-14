@@ -20,12 +20,28 @@ def check_cuda(tensor, name):
         )
 
 
+fwd_triton_configs = [
+    # Large tiles for high-end GPUs (A100/H100)
+    triton.Config({"Q_TILE_SIZE": 128, "K_TILE_SIZE": 128}, num_stages=3, num_warps=8),
+    triton.Config({"Q_TILE_SIZE": 128, "K_TILE_SIZE": 64}, num_stages=4, num_warps=4),
+    # Mid-range tiles
+    triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 64}, num_stages=4, num_warps=4),
+    triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 64}, num_stages=2, num_warps=8),
+    # Small tiles for high d_model or lower-end GPUs
+    triton.Config({"Q_TILE_SIZE": 32, "K_TILE_SIZE": 32}, num_stages=2, num_warps=4),
+]
+
+
+@triton.autotune(
+    configs=fwd_triton_configs,
+    # When any of these inputs change then Triton will run autotuning.
+    key=["D_MODEL", "IS_CAUSAL"],
+)
 @triton.jit
 def flash_fwd_kernel(
     Q_ptr,
     K_ptr,
     V_ptr,
-    is_causal: tl.constexpr,
     O_ptr,
     L_ptr,
     stride_qs,
@@ -40,12 +56,11 @@ def flash_fwd_kernel(
     stride_ob,
     stride_oq,
     stride_od,
-    stride_lb,
-    stride_lq,
     NUM_QUERIES: tl.constexpr,
     NUM_KEYS: tl.constexpr,
     softmax_scale,
-    DIM: tl.constexpr,
+    IS_CAUSAL: tl.constexpr,
+    D_MODEL: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
 ):
@@ -55,26 +70,26 @@ def flash_fwd_kernel(
 
     Q_block_ptr = tl.make_block_ptr(
         Q_ptr + seq_index * stride_qs,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_qq, stride_qd),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     K_block_ptr = tl.make_block_ptr(
         K_ptr + seq_index * stride_ks,
-        shape=(DIM, NUM_KEYS),
+        shape=(D_MODEL, NUM_KEYS),
         strides=(stride_kd, stride_kk),
         offsets=(0, 0),
-        block_shape=(DIM, K_TILE_SIZE),
+        block_shape=(D_MODEL, K_TILE_SIZE),
         order=(0, 1),
     )
     V_block_ptr = tl.make_block_ptr(
         V_ptr + seq_index * stride_vs,
-        shape=(NUM_KEYS, DIM),
+        shape=(NUM_KEYS, D_MODEL),
         strides=(stride_vk, stride_vd),
         offsets=(0, 0),
-        block_shape=(K_TILE_SIZE, DIM),
+        block_shape=(K_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
 
@@ -83,14 +98,14 @@ def flash_fwd_kernel(
     # Initialize accumulators in SRAM (tl.float32 for precision).
     Mi = tl.full([Q_TILE_SIZE], float("-inf"), dtype=tl.float32)
     Li = tl.zeros([Q_TILE_SIZE], dtype=tl.float32)
-    Oi = tl.zeros([Q_TILE_SIZE, DIM], dtype=tl.float32)
+    Oi = tl.zeros([Q_TILE_SIZE, D_MODEL], dtype=tl.float32)
 
     for k_tile_idx in range(0, tl.cdiv(NUM_KEYS, K_TILE_SIZE)):
         k_tile = tl.load(K_block_ptr, boundary_check=(1, 0), padding_option="zero")
         v_tile = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")
         s_tile = tl.dot(q_tile, k_tile) * softmax_scale
 
-        if is_causal:
+        if IS_CAUSAL:
             # Identify the global row and column indices for the current tiles.
             start_q = query_tile_index * Q_TILE_SIZE
             start_k = k_tile_idx * K_TILE_SIZE
@@ -122,10 +137,10 @@ def flash_fwd_kernel(
     # Write back to HBM (only once per program execution).
     O_block_ptr = tl.make_block_ptr(
         O_ptr + seq_index * stride_ob,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_oq, stride_od),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     tl.store(O_block_ptr, Oi.to(O_ptr.dtype.element_ty), boundary_check=(0, 1))
@@ -138,6 +153,20 @@ def flash_fwd_kernel(
     tl.store(L_ptr + off_l, l_sum_exp, mask=off_l < (seq_index + 1) * NUM_QUERIES)
 
 
+backward_preprocess_triton_configs = [
+    # flash_backward_preprocess_kernel does not require loading a lot of data,
+    # it should manage running with larger tiles.
+    triton.Config({"Q_TILE_SIZE": 128}, num_stages=2, num_warps=4),
+    triton.Config({"Q_TILE_SIZE": 256}, num_stages=2, num_warps=4),
+    triton.Config({"Q_TILE_SIZE": 512}, num_stages=2, num_warps=8),
+]
+
+
+@triton.autotune(
+    configs=backward_preprocess_triton_configs,
+    # When any of these inputs change then Triton will run autotuning.
+    key=["D_MODEL"],
+)
 @triton.jit
 def flash_backward_preprocess_kernel(
     O_ptr,
@@ -148,7 +177,7 @@ def flash_backward_preprocess_kernel(
     stride_O2,
     NUM_QUERIES: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
-    DIM: tl.constexpr,
+    D_MODEL: tl.constexpr,
 ):
     query_tile_index = tl.program_id(0)
     seq_idx = tl.program_id(1)
@@ -156,18 +185,18 @@ def flash_backward_preprocess_kernel(
     query_tile_offset = query_tile_index * Q_TILE_SIZE
     O_block_ptr = tl.make_block_ptr(
         base=O_ptr + seq_idx * stride_O0,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(query_tile_offset, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     dO_block_ptr = tl.make_block_ptr(
         base=dO_ptr + seq_idx * stride_O0,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(query_tile_offset, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
 
@@ -179,6 +208,23 @@ def flash_backward_preprocess_kernel(
     tl.store(D_ptr + off_d, D, mask=queries_offset < NUM_QUERIES)
 
 
+backward_triton_configs = [
+    # Backward is more register-heavy, keep tiles slightly smaller.
+    triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 64}, num_stages=3, num_warps=8),
+    triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 32}, num_stages=3, num_warps=4),
+    triton.Config({"Q_TILE_SIZE": 32, "K_TILE_SIZE": 64}, num_stages=3, num_warps=4),
+    triton.Config({"Q_TILE_SIZE": 32, "K_TILE_SIZE": 32}, num_stages=2, num_warps=4),
+]
+
+
+@triton.autotune(
+    configs=backward_triton_configs,
+    # When any of these inputs change then Triton will run autotuning.
+    key=["D_MODEL", "IS_CAUSAL"],
+    # Since we use atomic_add, we need to make sure Triton zeroes this tensor
+    # whenever autotuning.
+    reset_to_zero=["dQ_ptr"],
+)
 @triton.jit
 def flash_backward_kernel(
     Q_ptr,
@@ -198,7 +244,7 @@ def flash_backward_kernel(
     NUM_KEYS: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
-    DIM: tl.constexpr,
+    D_MODEL: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
 ):
     key_tile_idx = tl.program_id(0)
@@ -214,34 +260,34 @@ def flash_backward_kernel(
     key_tile_offset = key_tile_idx * K_TILE_SIZE
     K_block_ptr = tl.make_block_ptr(
         base=K_seq_ptr,
-        shape=(NUM_KEYS, DIM),
+        shape=(NUM_KEYS, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(key_tile_offset, 0),
-        block_shape=(K_TILE_SIZE, DIM),
+        block_shape=(K_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     V_block_ptr = tl.make_block_ptr(
         base=V_seq_ptr,
-        shape=(NUM_KEYS, DIM),
+        shape=(NUM_KEYS, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(key_tile_offset, 0),
-        block_shape=(K_TILE_SIZE, DIM),
+        block_shape=(K_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     Q_block_ptr = tl.make_block_ptr(
         base=Q_seq_ptr,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(0, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     dO_block_ptr = tl.make_block_ptr(
         base=dO_seq_ptr,
-        shape=(NUM_QUERIES, DIM),
+        shape=(NUM_QUERIES, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(0, 0),
-        block_shape=(Q_TILE_SIZE, DIM),
+        block_shape=(Q_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
 
@@ -249,8 +295,8 @@ def flash_backward_kernel(
     Vj = tl.load(V_block_ptr, boundary_check=(0,))
 
     # Accumulators for dK and dV (in registers).
-    dKj = tl.zeros([K_TILE_SIZE, DIM], dtype=tl.float32)
-    dVj = tl.zeros([K_TILE_SIZE, DIM], dtype=tl.float32)
+    dKj = tl.zeros([K_TILE_SIZE, D_MODEL], dtype=tl.float32)
+    dVj = tl.zeros([K_TILE_SIZE, D_MODEL], dtype=tl.float32)
     for i in range(0, NUM_QUERIES, Q_TILE_SIZE):
         Qi = tl.load(Q_block_ptr, boundary_check=(0,))
         dOi = tl.load(dO_block_ptr, boundary_check=(0,))
@@ -264,7 +310,7 @@ def flash_backward_kernel(
         if IS_CAUSAL:
             keys_offset = key_tile_offset + tl.arange(0, K_TILE_SIZE)
             Si = tl.where(
-                queries_offset[:, None] >= keys_offset[None, :], Si, float("-inf")
+                queries_offset[:, None] < keys_offset[None, :], float("-inf"), Si
             )
 
         Pi = tl.exp(Si - Li[:, None])
@@ -273,7 +319,7 @@ def flash_backward_kernel(
         dS = Pi * (dPi - Di[:, None]) * softmax_scale
 
         # Atomic Add for dQ.
-        rk = tl.arange(0, DIM)
+        rk = tl.arange(0, D_MODEL)
         off_dq = (
             seq_idx * stride_O0
             + queries_offset[:, None] * stride_O1
@@ -292,18 +338,18 @@ def flash_backward_kernel(
     # Finally, write dK and dV to HBM.
     dk_block_ptr = tl.make_block_ptr(
         base=dK_ptr + seq_idx * stride_O0,
-        shape=(NUM_KEYS, DIM),
+        shape=(NUM_KEYS, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(key_tile_offset, 0),
-        block_shape=(K_TILE_SIZE, DIM),
+        block_shape=(K_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     dv_block_ptr = tl.make_block_ptr(
         base=dV_ptr + seq_idx * stride_O0,
-        shape=(NUM_KEYS, DIM),
+        shape=(NUM_KEYS, D_MODEL),
         strides=(stride_O1, stride_O2),
         offsets=(key_tile_offset, 0),
-        block_shape=(K_TILE_SIZE, DIM),
+        block_shape=(K_TILE_SIZE, D_MODEL),
         order=(1, 0),
     )
     tl.store(dk_block_ptr, dKj.to(Kj.dtype), boundary_check=(0,))
@@ -331,8 +377,6 @@ class TritonFlashAttention(torch.autograd.Function):
             check_cuda(K, "K")
             check_cuda(V, "V")
 
-            ctx.Q_TILE_SIZE = 32
-            ctx.K_TILE_SIZE = 32
             ctx.is_causal = is_causal  # Needed for the backward.
             ctx.Q_shape = Q.shape
             ctx.K_shape = K.shape
@@ -344,21 +388,25 @@ class TritonFlashAttention(torch.autograd.Function):
             K_flat = rearrange(K, "... k d -> (...) k d").contiguous()
             V_flat = rearrange(V, "... k d -> (...) k d").contiguous()
 
-            n_sequences, n_queries, dim = Q_flat.shape
+            num_sequences, num_queries, d_model = Q_flat.shape
             n_keys = K_flat.shape[1]
-            softmax_scale = 1.0 / math.sqrt(dim)
+            softmax_scale = 1.0 / math.sqrt(d_model)
 
             O_flat = torch.zeros_like(Q_flat)
             L_flat = torch.zeros(
-                (n_sequences, n_queries), device=Q.device, dtype=torch.float32
+                (num_sequences, num_queries), device=Q.device, dtype=torch.float32
             )
 
-            grid = (triton.cdiv(n_queries, ctx.Q_TILE_SIZE), n_sequences)
+            # The Q_TILE_SIZE is dynamically set by Triton's autotune.
+            grid = lambda META: (
+                triton.cdiv(num_queries, META["Q_TILE_SIZE"]),
+                num_sequences,
+            )
             flash_fwd_kernel[grid](
                 Q_ptr=Q_flat,
                 K_ptr=K_flat,
                 V_ptr=V_flat,
-                is_causal=is_causal,
+                IS_CAUSAL=is_causal,
                 O_ptr=O_flat,
                 L_ptr=L_flat,
                 stride_qs=Q_flat.stride(0),
@@ -373,14 +421,10 @@ class TritonFlashAttention(torch.autograd.Function):
                 stride_ob=O_flat.stride(0),
                 stride_oq=O_flat.stride(1),
                 stride_od=O_flat.stride(2),
-                stride_lb=L_flat.stride(0),
-                stride_lq=L_flat.stride(1),
-                NUM_QUERIES=n_queries,
+                NUM_QUERIES=num_queries,
                 NUM_KEYS=n_keys,
                 softmax_scale=softmax_scale,
-                DIM=dim,
-                Q_TILE_SIZE=ctx.Q_TILE_SIZE,
-                K_TILE_SIZE=ctx.K_TILE_SIZE,
+                D_MODEL=d_model,
             )
 
             ctx.save_for_backward(Q_flat, K_flat, V_flat, O_flat, L_flat)
@@ -402,13 +446,17 @@ class TritonFlashAttention(torch.autograd.Function):
             dO_flat = rearrange(dO, "... queries d -> (...) queries d").contiguous()
 
             # Precompute the D tensor.
-            num_sequences, num_queries, dim = Q_flat.shape
+            num_sequences, num_queries, d_model = Q_flat.shape
             D = torch.empty(
                 (num_sequences, num_queries),
                 device=Q_flat.device,
                 dtype=torch.float32,
             )
-            grid_d = (triton.cdiv(num_queries, ctx.Q_TILE_SIZE), num_sequences)
+            # The Q_TILE_SIZE is dynamically set by Triton's autotune.
+            grid_d = lambda META: (
+                triton.cdiv(num_queries, META["Q_TILE_SIZE"]),
+                num_sequences,
+            )
             flash_backward_preprocess_kernel[grid_d](
                 O_ptr=O_flat,
                 dO_ptr=dO_flat,
@@ -417,17 +465,20 @@ class TritonFlashAttention(torch.autograd.Function):
                 stride_O1=O_flat.stride(1),
                 stride_O2=O_flat.stride(2),
                 NUM_QUERIES=num_queries,
-                Q_TILE_SIZE=ctx.Q_TILE_SIZE,
-                DIM=dim,
+                D_MODEL=d_model,
             )
 
             # Compute the gradients.
-            softmax_scale = 1.0 / math.sqrt(dim)
+            softmax_scale = 1.0 / math.sqrt(d_model)
             dQ_flat = torch.zeros_like(Q_flat)  # num_sequences, queries, d
             dK_flat = torch.zeros_like(K_flat)  # num_sequences, keys, d
             dV_flat = torch.zeros_like(V_flat)  # num_sequences, keys, d
             num_keys = K_flat.shape[1]
-            grid_bwd = (triton.cdiv(num_keys, ctx.K_TILE_SIZE), num_sequences)
+            # The K_TILE_SIZE is dynamically set by Triton's autotune.
+            grid_bwd = lambda META: (
+                triton.cdiv(num_keys, META["K_TILE_SIZE"]),
+                num_sequences,
+            )
             flash_backward_kernel[grid_bwd](
                 Q_ptr=Q_flat,
                 K_ptr=K_flat,
@@ -444,9 +495,7 @@ class TritonFlashAttention(torch.autograd.Function):
                 stride_O2=Q_flat.stride(2),
                 NUM_QUERIES=num_queries,
                 NUM_KEYS=num_keys,
-                Q_TILE_SIZE=ctx.Q_TILE_SIZE,
-                K_TILE_SIZE=ctx.K_TILE_SIZE,
-                DIM=dim,
+                D_MODEL=d_model,
                 IS_CAUSAL=ctx.is_causal,
             )
 
