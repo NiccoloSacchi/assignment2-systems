@@ -63,7 +63,7 @@ def flash_fwd_kernel(
                 k_tile_idx, k_tile_idx + K_TILE_SIZE, device=device
             )
             mask = q_indices[:, None] >= k_indices[None, :]
-            Si = torch.where(mask, Si, float("-inf"))
+            s_tile = torch.where(mask, s_tile, float("-inf"))
 
         mi_new = torch.max(mi, torch.max(s_tile, dim=-1, keepdim=True).values)
         p_tile = torch.exp(s_tile - mi_new)
