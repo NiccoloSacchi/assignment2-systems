@@ -1,8 +1,7 @@
 """Flash attention implementation.
 
 Used to debug the actual triton implementation. Tested with:
-uv run modal run scripts/execute_tests.py --k test_flash_forward_pass_triton
-uv run modal run scripts/execute_tests.py --k test_flash_backward_triton
+uv run modal run scripts/execute_tests.py --k "test_flash and triton"
 """
 
 import triton

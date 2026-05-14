@@ -1,8 +1,7 @@
 """Flash attention implementation.
 
 Used to debug the actual triton implementation. Tested with:
-uv run modal run scripts/execute_tests.py --k test_flash_forward_pass_pytorch
-uv run modal run scripts/execute_tests.py --k test_flash_backward_pytorch
+uv run modal run scripts/execute_tests.py --k "test_flash and pytorch"
 """
 
 import math
@@ -58,7 +57,14 @@ def flash_fwd_kernel(
             * softmax_scale
         )
 
-        # Optional: Add causal masking logic here
+        if is_causal:
+            q_indices = torch.arange(q_start, q_start + queries_in_tile, device=device)
+            k_indices = torch.arange(
+                k_tile_idx, k_tile_idx + K_TILE_SIZE, device=device
+            )
+            mask = q_indices[:, None] >= k_indices[None, :]
+            Si = torch.where(mask, Si, float("-inf"))
+
         mi_new = torch.max(mi, torch.max(s_tile, dim=-1, keepdim=True).values)
         p_tile = torch.exp(s_tile - mi_new)
         alpha = torch.exp(mi - mi_new)
@@ -129,6 +135,14 @@ def flash_backward_kernel(
             )
             * softmax_scale
         )
+        if is_causal:
+            q_indices = torch.arange(
+                q_tile_start, q_tile_start + Q_TILE_SIZE, device=Si.device
+            )
+            k_indices = torch.arange(k_start, k_start + K_TILE_SIZE, device=Si.device)
+            mask = q_indices[:, None] >= k_indices[None, :]
+            Si = torch.where(mask, Si, float("-inf"))
+
         Pi = torch.exp(Si - Li[:, None])
         dVj += einsum(
             Pi,
@@ -179,7 +193,6 @@ class PyTorchFlashAttention(torch.autograd.Function):
             assert Q.shape[:-2] == K.shape[:-2] == V.shape[:-2], "Batch/Head mismatch"
             assert Q.shape[-1] == K.shape[-1] == V.shape[-1], "Embedding D mismatch"
             assert K.shape[-2] == V.shape[-2], "Sequence length Nk mismatch"
-            assert not is_causal, "is_causal is not supported"
 
             ctx.Q_TILE_SIZE = 64
             ctx.K_TILE_SIZE = 64

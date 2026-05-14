@@ -16,7 +16,7 @@ import pytest
 def run_pytest(k):
     # Run pytest on the /root/tests directory where the modal app has put the
     # tests to be executed.
-    args = ["/root/tests"]
+    args = ["/root/tests", "-v"]
     if k:
         args.extend(["-k", k])
 
