@@ -21,13 +21,13 @@ def check_cuda(tensor, name):
 
 
 fwd_triton_configs = [
-    # Large tiles for high-end GPUs (A100/H100)
+    # Large tiles for high-end GPUs (A100/H100).
     triton.Config({"Q_TILE_SIZE": 128, "K_TILE_SIZE": 128}, num_stages=3, num_warps=8),
     triton.Config({"Q_TILE_SIZE": 128, "K_TILE_SIZE": 64}, num_stages=4, num_warps=4),
-    # Mid-range tiles
+    # Mid-range tiles.
     triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 64}, num_stages=4, num_warps=4),
     triton.Config({"Q_TILE_SIZE": 64, "K_TILE_SIZE": 64}, num_stages=2, num_warps=8),
-    # Small tiles for high d_model or lower-end GPUs
+    # Small tiles for high d_model or lower-end GPUs.
     triton.Config({"Q_TILE_SIZE": 32, "K_TILE_SIZE": 32}, num_stages=2, num_warps=4),
 ]
 
@@ -110,11 +110,11 @@ def flash_fwd_kernel(
             start_q = query_tile_index * Q_TILE_SIZE
             start_k = k_tile_idx * K_TILE_SIZE
 
-            # Create relative row/col indices for the current block
+            # Create relative row/col indices for the current block.
             rows = start_q + tl.arange(0, Q_TILE_SIZE)
             cols = start_k + tl.arange(0, K_TILE_SIZE)
 
-            # Mask: True where Key index > Query index
+            # Mask: True where Key index > Query index.
             mask = rows[:, None] < cols[None, :]
             s_tile = tl.where(mask, float("-inf"), s_tile)
 
@@ -126,7 +126,7 @@ def flash_fwd_kernel(
         Oi = tl.dot(P_tile.to(v_tile.dtype), v_tile, acc=Oi)
         Mi = mi_new
 
-        # Advance K and V block pointers
+        # Advance K and V block pointers.
         K_block_ptr = tl.advance(K_block_ptr, (0, K_TILE_SIZE))
         V_block_ptr = tl.advance(V_block_ptr, (K_TILE_SIZE, 0))
 
@@ -314,7 +314,7 @@ def flash_backward_kernel(
             )
 
         Pi = tl.exp(Si - Li[:, None])
-        dVj += tl.dot(tl.trans(Pi.to(Qi.dtype)), dOi)
+        dVj = tl.dot(tl.trans(Pi.to(Qi.dtype)), dOi, acc=dVj)
         dPi = tl.dot(dOi, tl.trans(Vj))
         dS = Pi * (dPi - Di[:, None]) * softmax_scale
 
@@ -330,7 +330,7 @@ def flash_backward_kernel(
             tl.dot(dS.to(Qi.dtype), Kj),
             mask=queries_offset[:, None] < NUM_QUERIES,
         )
-        dKj += tl.dot(tl.trans(dS.to(Qi.dtype)), Qi)
+        dKj = tl.dot(tl.trans(dS.to(Qi.dtype)), Qi, acc=dKj)
 
         Q_block_ptr = tl.advance(Q_block_ptr, [Q_TILE_SIZE, 0])
         dO_block_ptr = tl.advance(dO_block_ptr, [Q_TILE_SIZE, 0])
