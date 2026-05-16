@@ -13,10 +13,11 @@ import pytest
 @app.function(
     gpu="A100",  # Tests for Triton kernels require a GPU
 )
-def run_pytest(k):
+def run_pytest(file, k):
     # Run pytest on the /root/tests directory where the modal app has put the
     # tests to be executed.
-    args = ["/root/tests", "-v"]
+    target = f"/root/{file}" if file else "/root/tests"
+    args = [target, "-v"]
     if k:
         args.extend(["-k", k])
 
@@ -24,5 +25,5 @@ def run_pytest(k):
 
 
 @app.local_entrypoint()
-def main(k: str = ""):
-    run_pytest.remote(k)
+def main(file: str = "", k: str = ""):
+    run_pytest.remote(file, k)

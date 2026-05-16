@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 from cs336_systems.flash_attention_pytorch import PyTorchFlashAttention
-from cs336_systems.flash_attention_triton import TritonFlashAttention
+from cs336_systems.ddp import DDPIndividualParameters
 
 
 def get_flashattention_autograd_function_pytorch() -> type:
@@ -29,6 +29,10 @@ def get_flashattention_autograd_function_triton() -> type:
     Returns:
         A class object (not an instance of the class)
     """
+    # Import (transitively) triton here so that I can still run on my Mac where
+    # I can't have any triton package.
+    from cs336_systems.flash_attention_triton import TritonFlashAttention
+
     return TritonFlashAttention
 
 
@@ -49,8 +53,7 @@ def get_ddp(module: torch.nn.Module) -> torch.nn.Module:
     Returns:
         Instance of a DDP class.
     """
-    # For example: return DDP(module)
-    raise NotImplementedError
+    return DDPIndividualParameters(module)
 
 
 def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
@@ -64,8 +67,7 @@ def ddp_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Opt
         optimizer: torch.optim.Optimizer
             Optimizer being used with the DDP-wrapped model.
     """
-    # For example: ddp_model.finish_gradient_synchronization()
-    raise NotImplementedError
+    ddp_model.finish_gradient_synchronization()
 
 
 def get_fsdp(
