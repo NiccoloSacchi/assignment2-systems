@@ -11,8 +11,8 @@ For all options, see help:
 You can then download files from the Modal volume with `modal volume get`,
 example:
   uv run modal volume get cs336-systems-volume \
-    xl/20260426_144909/memory_snapshot.pickle \
-    ~/Downloads/memory_snapshot.pickle
+    xl/20260426_144909/memory_profile.pickle \
+    ~/Downloads/memory_profile.pickle 
 """
 
 from contextlib import nullcontext
