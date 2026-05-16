@@ -34,7 +34,8 @@ def proc_train(
 ):
     device, sync = setup_distributed_process(rank, world_size, gpu)
 
-    # Seed to ensure that ranks are initialized with different initial models.
+    # Seed to ensure that ranks are initialized with different initial models
+    # and data.
     torch.manual_seed(rank)
 
     # Instantiate the model and the model parameters of rank 0 to all other
@@ -74,7 +75,8 @@ def proc_train(
     for i in range(train_steps):
         print(f"I am rank={rank}. Starting train step {i}...", flush=True)
 
-        if i >= warmup_steps:
+        if i == warmup_steps:
+            dist.barrier()
             grad_transfer_time = 0
             start = timer()
 
@@ -121,7 +123,7 @@ def proc_train(
 
     tot_time = timer() - start
     print(
-        f"I am {rank}. I spent {grad_transfer_time / tot_time * 100:.2f}% ({grad_transfer_time:.2f}s / {tot_time:.2f}s) time on transferring gradients."
+        f"I am rank={rank}. I spent {grad_transfer_time / tot_time * 100:.2f}% ({grad_transfer_time:.2f}s / {tot_time:.2f}s) time on transferring gradients."
     )
     dist.destroy_process_group()
 
