@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 from cs336_systems.flash_attention_pytorch import PyTorchFlashAttention
 from cs336_systems.ddp import DDPIndividualParameters
+from cs336_systems.optimizer_state_sharding import OptimizerStateSharding
 
 
 def get_flashattention_autograd_function_pytorch() -> type:
@@ -140,4 +141,4 @@ def get_sharded_optimizer(
     Returns:
         Instance of sharded optimizer.
     """
-    raise NotImplementedError
+    return OptimizerStateSharding(params, optimizer_cls, **kwargs)
